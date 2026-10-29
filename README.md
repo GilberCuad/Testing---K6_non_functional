@@ -13,7 +13,7 @@ que habitualmente se hacen con JMeter, ejecutadas desde un **Jenkins local en Do
 | Fase | Descripción | Estado |
 |---|---|---|
 | 0 | Diagnóstico del entorno y estructura | ✅ Hecha |
-| 1 | Docker Compose con QuickPizza (red `perf-net`) | ⏳ Pendiente |
+| 1 | Docker Compose con QuickPizza (red `perf-net`) | ✅ Hecha |
 | 2 | Primer test (smoke) | ⏳ Pendiente |
 | 3 | Plan de pruebas (`docs/plan-de-pruebas.md`) | ⏳ Pendiente |
 | 4 | Implementación de los tests (load, stress, spike, soak) | ⏳ Pendiente |
@@ -27,8 +27,8 @@ que habitualmente se hacen con JMeter, ejecutadas desde un **Jenkins local en Do
 | Herramienta | Versión verificada | Notas |
 |---|---|---|
 | Windows 11 + WSL 2 | 10.0.26200 | Docker Desktop usa WSL 2 como backend |
-| Docker Desktop | Docker 27.4.0 | Debe estar **abierto** para que el engine responda |
-| Docker Compose | v2.31.0 | Se invoca como `docker compose` (con espacio) |
+| Docker Desktop | Docker 29.9.2 | Debe estar **abierto** para que el engine responda. Instalación por usuario (`%LOCALAPPDATA%\Programs\DockerDesktop`) |
+| Docker Compose | v5.6.1 | Se invoca como `docker compose` (con espacio) |
 | k6 | — | No hace falta instalarlo: se usa la imagen `grafana/k6` |
 
 Comprobación rápida:
@@ -56,5 +56,36 @@ K6/
 ```
 
 ## Cómo ejecutar
+
+### 1. Levantar la app bajo prueba (QuickPizza)
+
+```powershell
+docker compose up -d --wait   # espera hasta que QuickPizza responda en /ready
+docker compose ps             # quickpizza-ready debe aparecer como (healthy)
+```
+
+- Navegador / Windows: <http://localhost:3333> (publicado solo en `127.0.0.1`).
+- Desde otros contenedores (k6, Jenkins): `http://quickpizza:3333`, conectándolos a la red `perf-net`.
+- La base de datos es SQLite **en memoria**: al recrear el contenedor se pierden usuarios y ratings.
+
+Verificación rápida:
+
+```powershell
+curl.exe -s -o NUL -w "%{http_code}" http://localhost:3333/ready      # 200
+docker run --rm --network perf-net curlimages/curl:8.11.1 -s http://quickpizza:3333/api/names
+```
+
+Parar todo:
+
+```powershell
+docker compose down
+```
+
+#### ¿Por qué existe `quickpizza-ready`?
+
+La imagen de QuickPizza es *distroless* (sin shell ni curl), así que no puede llevar su propio
+`healthcheck`. El servicio `quickpizza-ready` es un contenedor mínimo con curl que comprueba
+`http://quickpizza:3333/ready` por la red `perf-net`; su estado `healthy` indica que la app está
+lista. Esto permite usar `docker compose up --wait`.
 
 Se irá completando fase a fase.

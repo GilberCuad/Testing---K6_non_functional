@@ -1,0 +1,137 @@
+# CLAUDE.md — Contexto del proyecto k6 + Jenkins local (Docker)
+
+Este archivo guarda el contexto del proyecto para retomarlo en cualquier sesión.
+Léelo completo antes de hacer nada.
+
+## Quién es el usuario
+
+QA Automation con experiencia en **JMeter, Cypress y Playwright**. Está aprendiendo **k6**
+con un proyecto de práctica: implementar las pruebas de performance que normalmente hace
+con JMeter y ejecutarlas en un **Jenkins local dentro de Docker**.
+
+## Cómo trabajar (OBLIGATORIO)
+
+Actúa como **profesor de desarrollo**:
+
+1. Trabaja **por fases**. Al terminar cada fase, **detente**, resume lo hecho y **espera
+   confirmación** antes de pasar a la siguiente.
+2. En cada paso explica **qué haces y por qué** (la razón de la decisión, no solo el comando).
+3. Cuando haya varias opciones, presenta las alternativas con **pros y contras**, recomienda
+   una y espera antes de implementarla.
+4. Cuando algo se parezca a un concepto de JMeter (Thread Group, Assertions, CSV Data Set,
+   Listeners, Test Fragments, .jtl), haz la **comparación explícita**.
+5. No avances varias fases de golpe ni crees archivos que no hayas explicado.
+6. Si algo falla, **explica la causa antes de arreglarlo**.
+7. **NUNCA hagas `git commit`** (ni push). Cuando sea buen momento para un commit,
+   **avísale al usuario** y propón el mensaje; él lo hace.
+8. Código y comentarios claros; **documentación en español**.
+9. Cada fase debe ser reproducible con comandos documentados.
+
+## App bajo prueba: QuickPizza
+
+- App demo oficial de Grafana k6: https://github.com/grafana/quickpizza
+- Corre **localmente en Docker**: imagen `ghcr.io/grafana/quickpizza-local:latest`, puerto `3333`.
+- **Nunca** hacer pruebas de carga contra el servidor público (entorno compartido).
+- Antes de escribir tests, **investigar el repo/README** para descubrir los endpoints reales
+  (login, registro, generación de pizza, ratings…). No asumir endpoints: verificarlos y
+  explicar lo encontrado.
+
+## Stack
+
+- k6 (scripts en JavaScript), ejecutado con la imagen `grafana/k6` (k6 NO está instalado localmente,
+  decisión intencional: misma versión en local y en Jenkins).
+- Docker + Docker Compose v2 (`docker compose`, con espacio).
+- Jenkins local en contenedor, Jenkinsfile declarativo.
+- Opcional: InfluxDB + Grafana.
+
+## Plan de fases
+
+| Fase | Contenido | Estado |
+|---|---|---|
+| 0 | Diagnóstico del entorno, estructura de carpetas, README inicial, `.gitignore` | ✅ Hecha |
+| 1 | `docker-compose.yml` con QuickPizza en red propia `perf-net`. Explicar redes de Docker, resolución por nombre de contenedor y por qué importa para Jenkins. Healthcheck y verificar que responde | ✅ Hecha |
+| 2 | Primer test smoke con pocos VUs. Explicar anatomía (`options`, `default function`, `check`, `sleep`) y el resumen (`http_req_duration`, `p(95)`, `http_req_failed`…). `BASE_URL` como variable de entorno y por qué no se hardcodea | ⏭️ Siguiente |
+| 3 | Plan de pruebas en `docs/plan-de-pruebas.md` (tabla: objetivo, escenario, carga, duración, criterio de aceptación). Explicar VU, iteración, escenario y su relación con el Thread Group | ⏳ |
+| 4 | Implementar los scripts reutilizando `k6/lib/` (helpers de auth, thresholds, datos). Explicar `SharedArray` frente al CSV Data Set. Usar `check`, `group`, `scenarios`, `thresholds` explicando cada uno | ⏳ |
+| 5 | Jenkins en el compose (misma red). Antes: opciones para ejecutar k6 desde Jenkins (contenedor `grafana/k6` como agente/paso vs. imagen custom de Jenkins con k6) con pros y contras y recomendación. Explicar el acceso a Docker desde Jenkins y sus implicaciones de seguridad | ⏳ |
+| 6 | `Jenkinsfile` declarativo: levantar/verificar app → smoke → load → publicar resultados (JSON/HTML como artefacto). Si falla un threshold, falla el build (equivalente automatizado de las aserciones de JMeter). Parametrizar el tipo de prueba | ⏳ |
+| 7 | (Opcional) InfluxDB + Grafana, enviar métricas de k6, dashboard. Comparar con Listeners/reportes de JMeter | ⏳ |
+| 8 | README final: cómo levantar todo, correr cada prueba, interpretar resultados, tabla JMeter → k6 | ⏳ |
+
+### Propuesta base de pruebas (Fase 3, para ajustar y justificar)
+
+| Prueba | Objetivo | Carga sugerida | Threshold sugerido |
+|---|---|---|---|
+| Smoke | Validar que el script y la app funcionan | 1-2 VUs, ~30 s | 0% errores |
+| Load | Comportamiento con carga esperada | rampa a ~20 VUs, ~5 min | p(95) < 500 ms, errores < 1% |
+| Stress | Encontrar el punto de quiebre | rampas escalonadas hasta degradar | observar dónde se rompe |
+| Spike | Reacción ante pico repentino | salto brusco de VUs | recuperación posterior |
+| Soak | Estabilidad prolongada | carga moderada, 20-30 min | sin degradación progresiva |
+
+Flujos mínimos: endpoints públicos, login/registro, generación de pizza autenticada y rating.
+
+## Estado actual (al cerrar la Fase 1)
+
+### Entorno verificado
+- Windows 11 Home Single Language 10.0.26200, 64 bits. Docker Desktop con backend **WSL 2**.
+- Docker Desktop **se actualizó** durante la Fase 1: Docker 29.9.2, Compose v5.6.1. Ahora es
+  instalación **por usuario** en `C:\Users\g_cua\AppData\Local\Programs\DockerDesktop\resources\bin`
+  (la antigua `C:\Program Files\Docker\Docker` ya no existe). Si `docker` "no se reconoce", el
+  proceso tiene un PATH viejo: reiniciar VS Code o anteponer esa ruta al PATH.
+- Ruta del proyecto: `C:\Users\g_cua\Documents\Practicas Aut\K6` (sin tildes, con un espacio:
+  vigilar en montajes de volúmenes de la Fase 5).
+- git 2.36.1 (antiguo pero funcional; se sugirió `winget upgrade Git.Git`).
+- k6 no instalado localmente (intencional).
+
+### Estructura creada
+```text
+docker/       Dockerfiles y configuración por servicio (Jenkins custom, Grafana…)
+k6/scripts/   un script por tipo de prueba
+k6/lib/       código reutilizable (auth, config, thresholds)
+k6/data/      datos de prueba (JSON/CSV para SharedArray)
+jenkins/      Jenkinsfile (se configura "Script Path" en Jenkins; decisión final en Fase 6)
+docs/         plan de pruebas y decisiones
+results/      salidas de ejecución (ignorado por git)
+```
+Las carpetas vacías tienen `.gitkeep`. Archivos creados: `README.md` (con tabla de estado por
+fase, actualizarla al cerrar cada fase), `.gitignore`, este `CLAUDE.md`.
+
+### Decisiones y pendientes
+- **git:** repo inicializado, rama `calidad` (commit `initial structure`). El usuario hace los
+  commits; Claude solo avisa y propone mensaje. **Pendiente:** commit de `CLAUDE.md` + Fase 1
+  (el usuario decidió posponerlo).
+
+### Decisiones de la Fase 1
+- `docker-compose.yml` en la **raíz** (confirmado); `docker/` solo para configuración de servicios.
+  Proyecto `name: k6-perf`.
+- Red con **nombre fijo** `perf-net` (sin prefijo de proyecto) para poder usar
+  `docker run --network perf-net grafana/k6 ...` en la Fase 6.
+- QuickPizza publicado solo en `127.0.0.1:3333`. Desde contenedores: `http://quickpizza:3333`.
+- La imagen de QuickPizza es **distroless** (sin shell/curl/wget), así que no puede tener
+  healthcheck propio. Opción elegida (C): contenedor vigía `quickpizza-ready`
+  (`curlimages/curl:8.11.1`, `sleep infinity`, `init: true`) con healthcheck
+  `curl -f http://quickpizza:3333/ready`. Permite `docker compose up -d --wait`.
+- Verificado: `/ready` y `/healthz` → 200 desde Windows; `/api/names` por nombre de servicio
+  desde otro contenedor en `perf-net` → 200; `localhost` desde un contenedor falla (esperado).
+
+### Hallazgos de QuickPizza (para las Fases 2-4)
+- Salud: `GET /ready` (readiness), `GET /healthz` (liveness).
+- Registro `POST /api/users {username, password}` → 201. Login `POST /api/users/token/login`
+  → `{token}`. Cabecera: `Authorization: Token <token>`.
+- Con auth: `POST /api/pizza` (restricciones opcionales), `/api/ratings` (CRUD,
+  `{stars 1-5, pizza_id}`), `/api/ingredients/{type}`, `/api/doughs`, `/api/tools`.
+- Públicos: `/api/quotes`, `/api/names` (verificado sin auth → 200), `/api/adjectives`.
+  El OpenAPI declara auth global por error: verificar el resto en la Fase 2.
+- BD: SQLite **en memoria** por defecto (`QUICKPIZZA_DB`): los usuarios se pierden al recrear
+  el contenedor → crear los usuarios de prueba en el `setup()` de k6.
+- `QUICKPIZZA_DELAY_RECOMMENDATIONS_API_PIZZA_POST` (p. ej. `3s`) inyecta latencia: útil para
+  demostrar thresholds que fallan.
+
+## Al retomar la sesión
+
+1. Leer este archivo y `README.md`.
+2. Verificar la nueva ruta del proyecto y que `docker info` responde.
+3. Levantar la app: `docker compose up -d --wait` y comprobar `docker compose ps` (healthy).
+4. Recordar el commit pendiente si el usuario aún no lo ha hecho.
+5. Empezar la **Fase 2** (smoke test): ejecutar k6 con `docker run --network perf-net grafana/k6`
+   y `BASE_URL=http://quickpizza:3333`; verificar qué endpoints son realmente públicos.

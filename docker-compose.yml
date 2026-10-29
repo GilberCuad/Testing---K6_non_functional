@@ -1,0 +1,51 @@
+# Orquestación del entorno de pruebas de performance.
+#
+# Uso:
+#   docker compose up -d --wait   # levanta todo y espera a que quickpizza esté "ready"
+#   docker compose ps             # estado y salud de los servicios
+#   docker compose down           # para y elimina contenedores (la red también)
+
+# Nombre fijo del proyecto: los contenedores se llamarán k6-perf-<servicio>-1
+# independientemente del nombre de la carpeta.
+name: k6-perf
+
+services:
+  # App bajo prueba. Imagen distroless: no tiene shell ni curl, por eso no
+  # puede llevar su propio healthcheck (ver quickpizza-ready).
+  quickpizza:
+    image: ghcr.io/grafana/quickpizza-local:latest
+    ports:
+      # Solo se publica en 127.0.0.1: accesible desde tu navegador, pero no
+      # desde otras máquinas de la red local.
+      - "127.0.0.1:3333:3333"
+    networks:
+      - perf-net
+    restart: unless-stopped
+
+  # "Vigía": contenedor mínimo con curl cuyo único trabajo es comprobar
+  # /ready de quickpizza a través de perf-net, usando el NOMBRE DEL SERVICIO
+  # como hostname (DNS interno de Docker). Su estado "healthy" equivale a
+  # "quickpizza está lista para recibir tráfico".
+  quickpizza-ready:
+    image: curlimages/curl:8.11.1
+    entrypoint: ["sleep", "infinity"]
+    # init: true añade un mini-init como PID 1 para que "sleep" reciba la
+    # señal de parada y el contenedor se detenga al instante en un "down".
+    init: true
+    depends_on:
+      - quickpizza
+    networks:
+      - perf-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://quickpizza:3333/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+networks:
+  perf-net:
+    # Nombre fijo (sin prefijo de proyecto) para poder conectar contenedores
+    # externos con "docker run --network perf-net ..." (k6 en la Fase 6).
+    name: perf-net
+    driver: bridge
