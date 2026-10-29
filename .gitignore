@@ -1,0 +1,40 @@
+# ------------------------------------------------------------
+# Resultados de ejecución de k6
+# Se generan en cada corrida (JSON, HTML, CSV). Son artefactos,
+# no código: Jenkins los archiva por build, no van al repositorio.
+# ------------------------------------------------------------
+results/*
+!results/.gitkeep
+
+# ------------------------------------------------------------
+# Secretos y configuración local
+# Las variables sensibles (contraseñas, tokens) van en .env,
+# que nunca se versiona. Se versiona solo una plantilla .env.example.
+# ------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ------------------------------------------------------------
+# Datos persistentes de contenedores (si alguna vez se montan
+# como carpetas locales en lugar de volúmenes de Docker)
+# ------------------------------------------------------------
+jenkins_home/
+influxdb-data/
+grafana-data/
+
+# ------------------------------------------------------------
+# Node (solo si más adelante se usa npm para autocompletado/linters)
+# ------------------------------------------------------------
+node_modules/
+
+# ------------------------------------------------------------
+# Sistema operativo y editores
+# ------------------------------------------------------------
+Thumbs.db
+desktop.ini
+.DS_Store
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json
