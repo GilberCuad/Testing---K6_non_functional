@@ -14,7 +14,7 @@ que habitualmente se hacen con JMeter, ejecutadas desde un **Jenkins local en Do
 |---|---|---|
 | 0 | Diagnóstico del entorno y estructura | ✅ Hecha |
 | 1 | Docker Compose con QuickPizza (red `perf-net`) | ✅ Hecha |
-| 2 | Primer test (smoke) | ⏳ Pendiente |
+| 2 | Primer test (smoke) | ✅ Hecha |
 | 3 | Plan de pruebas (`docs/plan-de-pruebas.md`) | ⏳ Pendiente |
 | 4 | Implementación de los tests (load, stress, spike, soak) | ⏳ Pendiente |
 | 5 | Jenkins en Docker | ⏳ Pendiente |
@@ -29,7 +29,7 @@ que habitualmente se hacen con JMeter, ejecutadas desde un **Jenkins local en Do
 | Windows 11 + WSL 2 | 10.0.26200 | Docker Desktop usa WSL 2 como backend |
 | Docker Desktop | Docker 29.9.2 | Debe estar **abierto** para que el engine responda. Instalación por usuario (`%LOCALAPPDATA%\Programs\DockerDesktop`) |
 | Docker Compose | v5.6.1 | Se invoca como `docker compose` (con espacio) |
-| k6 | — | No hace falta instalarlo: se usa la imagen `grafana/k6` |
+| k6 | v2.3.0 | No hace falta instalarlo: se usa la imagen **fijada** `grafana/k6:2.3.0` (misma versión en local y en Jenkins) |
 
 Comprobación rápida:
 
@@ -87,5 +87,43 @@ La imagen de QuickPizza es *distroless* (sin shell ni curl), así que no puede l
 `healthcheck`. El servicio `quickpizza-ready` es un contenedor mínimo con curl que comprueba
 `http://quickpizza:3333/ready` por la red `perf-net`; su estado `healthy` indica que la app está
 lista. Esto permite usar `docker compose up --wait`.
+
+### 2. Smoke test
+
+Valida que el script y la app funcionan con carga mínima (1 VU, 30 s). Con la app levantada,
+desde la raíz del proyecto:
+
+```powershell
+docker run --rm --network perf-net -e BASE_URL=http://quickpizza:3333 -v "${PWD}/k6:/k6:ro" grafana/k6:2.3.0 run /k6/scripts/smoke.js
+```
+
+| Parte del comando | Para qué |
+|---|---|
+| `--network perf-net` | k6 se une a la red de la app y la encuentra por nombre (`quickpizza`) |
+| `-e BASE_URL=...` | URL objetivo. **Obligatoria**: el script se detiene si falta, para no apuntar nunca a un entorno equivocado |
+| `-v "${PWD}/k6:/k6:ro"` | Monta los scripts en el contenedor, en solo lectura |
+| `grafana/k6:2.3.0` | Versión fijada de k6 |
+
+Criterios de aceptación (thresholds): 0% de peticiones fallidas, 100% de checks correctos y
+`p(95)` < 500 ms.
+
+#### Cómo leer el resultado
+
+| Métrica del resumen | Significado | En JMeter |
+|---|---|---|
+| `http_req_duration` | Tiempo de respuesta (avg, med, p(90), p(95), max) | *Elapsed* / columnas del Aggregate Report |
+| `p(95)` | El 95% de las peticiones tardó esto o menos | *95% Line* |
+| `http_req_failed` | % de peticiones fallidas (status ≥ 400 o error de conexión) | *Error %* |
+| `http_reqs` | Total de peticiones y peticiones/segundo | *Samples* / *Throughput* |
+| `checks` | % de validaciones correctas | Resultados de las Assertions |
+| `iterations` | Veces que se completó la `default function` | Iteraciones del Thread Group |
+
+#### Código de salida (lo que usará Jenkins)
+
+| Código | Significado |
+|---|---|
+| `0` | Todo correcto, thresholds cumplidos |
+| `99` | Algún threshold no se cumplió (p. ej. `BASE_URL=http://localhost:3333` desde el contenedor) |
+| `107` | Error del script (p. ej. falta `BASE_URL`) |
 
 Se irá completando fase a fase.

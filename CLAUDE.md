@@ -50,8 +50,8 @@ Actúa como **profesor de desarrollo**:
 |---|---|---|
 | 0 | Diagnóstico del entorno, estructura de carpetas, README inicial, `.gitignore` | ✅ Hecha |
 | 1 | `docker-compose.yml` con QuickPizza en red propia `perf-net`. Explicar redes de Docker, resolución por nombre de contenedor y por qué importa para Jenkins. Healthcheck y verificar que responde | ✅ Hecha |
-| 2 | Primer test smoke con pocos VUs. Explicar anatomía (`options`, `default function`, `check`, `sleep`) y el resumen (`http_req_duration`, `p(95)`, `http_req_failed`…). `BASE_URL` como variable de entorno y por qué no se hardcodea | ⏭️ Siguiente |
-| 3 | Plan de pruebas en `docs/plan-de-pruebas.md` (tabla: objetivo, escenario, carga, duración, criterio de aceptación). Explicar VU, iteración, escenario y su relación con el Thread Group | ⏳ |
+| 2 | Primer test smoke con pocos VUs. Explicar anatomía (`options`, `default function`, `check`, `sleep`) y el resumen (`http_req_duration`, `p(95)`, `http_req_failed`…). `BASE_URL` como variable de entorno y por qué no se hardcodea | ✅ Hecha |
+| 3 | Plan de pruebas en `docs/plan-de-pruebas.md` (tabla: objetivo, escenario, carga, duración, criterio de aceptación). Explicar VU, iteración, escenario y su relación con el Thread Group | ⏭️ Siguiente |
 | 4 | Implementar los scripts reutilizando `k6/lib/` (helpers de auth, thresholds, datos). Explicar `SharedArray` frente al CSV Data Set. Usar `check`, `group`, `scenarios`, `thresholds` explicando cada uno | ⏳ |
 | 5 | Jenkins en el compose (misma red). Antes: opciones para ejecutar k6 desde Jenkins (contenedor `grafana/k6` como agente/paso vs. imagen custom de Jenkins con k6) con pros y contras y recomendación. Explicar el acceso a Docker desde Jenkins y sus implicaciones de seguridad | ⏳ |
 | 6 | `Jenkinsfile` declarativo: levantar/verificar app → smoke → load → publicar resultados (JSON/HTML como artefacto). Si falla un threshold, falla el build (equivalente automatizado de las aserciones de JMeter). Parametrizar el tipo de prueba | ⏳ |
@@ -70,7 +70,7 @@ Actúa como **profesor de desarrollo**:
 
 Flujos mínimos: endpoints públicos, login/registro, generación de pizza autenticada y rating.
 
-## Estado actual (al cerrar la Fase 1)
+## Estado actual (al cerrar la Fase 2)
 
 ### Entorno verificado
 - Windows 11 Home Single Language 10.0.26200, 64 bits. Docker Desktop con backend **WSL 2**.
@@ -97,9 +97,28 @@ Las carpetas vacías tienen `.gitkeep`. Archivos creados: `README.md` (con tabla
 fase, actualizarla al cerrar cada fase), `.gitignore`, este `CLAUDE.md`.
 
 ### Decisiones y pendientes
-- **git:** repo inicializado, rama `calidad` (commit `initial structure`). El usuario hace los
-  commits; Claude solo avisa y propone mensaje. **Pendiente:** commit de `CLAUDE.md` + Fase 1
-  (el usuario decidió posponerlo).
+- **git:** rama `calidad`. Fase 1 ya commiteada por el usuario (`067b6c8`). El usuario hace los
+  commits; Claude solo avisa y propone mensaje. **Pendiente:** commit de la Fase 2.
+- El PATH de la sesión de VS Code sigue sin Docker: en cada comando anteponer
+  `$env:Path = "$env:LOCALAPPDATA\Programs\DockerDesktop\resources\bin;$env:Path"` (PowerShell).
+
+### Decisiones de la Fase 2
+- k6 **fijado** a `grafana/k6:2.3.0` (era la `latest` el 2026-10-28). k6 v2.x.
+- Ejecución: `docker run --rm --network perf-net -e BASE_URL=http://quickpizza:3333 -v "${PWD}/k6:/k6:ro" grafana/k6:2.3.0 run /k6/scripts/<script>.js`.
+  La ruta con espacio funciona entre comillas.
+- `k6/scripts/smoke.js`: 1 VU, 30 s, GET `/api/quotes` y `/api/names`, `sleep(1)`. Thresholds:
+  `http_req_failed rate==0`, `checks rate==1`, `http_req_duration p(95)<500`. Resultado: p(95) ≈ 3 ms.
+- `BASE_URL` **obligatoria** sin valor por defecto (falla con error claro → exit 107).
+- Lección aprendida: en los checks de contenido, validar `r.status === 200 &&` antes de `r.json()`.
+  Si no, una respuesta fallida lanza una excepción, corta la iteración antes de `sleep()` y el VU
+  dispara peticiones sin pausa.
+- Códigos de salida verificados: 0 = ok, 99 = thresholds incumplidos, 107 = error de script.
+- Observación para la Fase 4: con conexión rechazada `http_req_duration` p(95)=0s (pasa el
+  threshold): la latencia sola no basta, siempre acompañarla de `http_req_failed`, o usar
+  `http_req_duration{expected_response:true}`.
+- Endpoints verificados SIN auth (200): `/api/quotes`, `/api/names`, `/api/adjectives`,
+  `/api/config`. CON auth (401 sin token): `/api/doughs`, `/api/tools`,
+  `/api/ingredients/{type}`, `POST /api/pizza`.
 
 ### Decisiones de la Fase 1
 - `docker-compose.yml` en la **raíz** (confirmado); `docker/` solo para configuración de servicios.
@@ -120,8 +139,8 @@ fase, actualizarla al cerrar cada fase), `.gitignore`, este `CLAUDE.md`.
   → `{token}`. Cabecera: `Authorization: Token <token>`.
 - Con auth: `POST /api/pizza` (restricciones opcionales), `/api/ratings` (CRUD,
   `{stars 1-5, pizza_id}`), `/api/ingredients/{type}`, `/api/doughs`, `/api/tools`.
-- Públicos: `/api/quotes`, `/api/names` (verificado sin auth → 200), `/api/adjectives`.
-  El OpenAPI declara auth global por error: verificar el resto en la Fase 2.
+- Públicos: ver la lista verificada en "Decisiones de la Fase 2" (el OpenAPI declara auth
+  global por error).
 - BD: SQLite **en memoria** por defecto (`QUICKPIZZA_DB`): los usuarios se pierden al recrear
   el contenedor → crear los usuarios de prueba en el `setup()` de k6.
 - `QUICKPIZZA_DELAY_RECOMMENDATIONS_API_PIZZA_POST` (p. ej. `3s`) inyecta latencia: útil para
@@ -133,5 +152,5 @@ fase, actualizarla al cerrar cada fase), `.gitignore`, este `CLAUDE.md`.
 2. Verificar la nueva ruta del proyecto y que `docker info` responde.
 3. Levantar la app: `docker compose up -d --wait` y comprobar `docker compose ps` (healthy).
 4. Recordar el commit pendiente si el usuario aún no lo ha hecho.
-5. Empezar la **Fase 2** (smoke test): ejecutar k6 con `docker run --network perf-net grafana/k6`
-   y `BASE_URL=http://quickpizza:3333`; verificar qué endpoints son realmente públicos.
+5. Empezar la **Fase 3**: `docs/plan-de-pruebas.md`, partiendo de la "Propuesta base de pruebas"
+   y del p(95) ≈ 3 ms observado en el smoke. Explicar VU, iteración y escenario frente al Thread Group.
